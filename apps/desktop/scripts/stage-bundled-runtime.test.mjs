@@ -4,7 +4,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { test } from 'vitest'
 
-import { copyWindowsPythonTree } from './stage-bundled-runtime.mjs'
+import { copyWindowsPythonTree, uvVenvArgs } from './stage-bundled-runtime.mjs'
 
 function makeTree(root, entries) {
   for (const [rel, content] of Object.entries(entries)) {
@@ -40,4 +40,13 @@ test('copyWindowsPythonTree skips Python launcher executables', () => {
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true })
   }
+})
+
+test('uvVenvArgs only passes options supported by uv venv', () => {
+  assert.deepEqual(uvVenvArgs('runtime/venv', 'python.exe'), [
+    'venv',
+    'runtime/venv',
+    '--python',
+    'python.exe'
+  ])
 })

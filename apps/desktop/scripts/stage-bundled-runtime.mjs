@@ -82,6 +82,10 @@ function venvPythonPath(venvDir) {
   return path.join(venvDir, process.platform === 'win32' ? 'Scripts' : 'bin', process.platform === 'win32' ? 'python.exe' : 'python')
 }
 
+export function uvVenvArgs(venvDir, python) {
+  return ['venv', venvDir, '--python', python]
+}
+
 function readPyvenvHome(venvDir) {
   const cfg = path.join(venvDir, 'pyvenv.cfg')
 
@@ -152,7 +156,7 @@ function buildRuntimeFromCheckout() {
   fs.mkdirSync(OUT_DIR, { recursive: true })
 
   if (uv) {
-    let result = spawnSync(uv, ['venv', VENV_DIR, '--python', python, '--copies'], {
+    let result = spawnSync(uv, uvVenvArgs(VENV_DIR, python), {
       cwd: REPO_ROOT,
       stdio: 'inherit',
       env: { ...process.env, UV_NO_CONFIG: '1' }
