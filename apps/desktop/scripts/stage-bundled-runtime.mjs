@@ -135,7 +135,7 @@ function buildRuntimeFromCheckout() {
 
     result = spawnSync(
       uv,
-      ['pip', 'install', '--python', venvPythonPath(VENV_DIR), '.[all]'],
+      ['pip', 'install', '--python', venvPythonPath(VENV_DIR), '-e', '.[all]'],
       {
         cwd: REPO_ROOT,
         stdio: 'inherit',
@@ -162,7 +162,7 @@ function buildRuntimeFromCheckout() {
   }
 
   const pip = venvPythonPath(VENV_DIR)
-  const install = spawnSync(pip, ['-m', 'pip', 'install', '.[all]'], {
+  const install = spawnSync(pip, ['-m', 'pip', 'install', '-e', '.[all]'], {
     cwd: REPO_ROOT,
     stdio: 'inherit'
   })
