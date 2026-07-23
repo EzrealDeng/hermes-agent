@@ -132,6 +132,7 @@ import {
 import { ensureSpawnHelperExecutable } from './spawn-helper-perms'
 import { createBootstrapCoordinator, sshConfigFingerprint } from './ssh-bootstrap-coordinator'
 import { collectSshConfigHosts, parseSshGOutput } from './ssh-config'
+import { readPackagedDesktopConnectionConfig } from './default-connection'
 import {
   buildInteractiveSshArgs,
   createSshProbeConnection,
@@ -366,6 +367,9 @@ app.commandLine.appendSwitch('disable-backgrounding-occluded-windows')
 app.commandLine.appendSwitch('disable-background-timer-throttling')
 
 const SOURCE_REPO_ROOT = path.resolve(APP_ROOT, '../..')
+const BUNDLED_RUNTIME_ROOT = process.resourcesPath
+  ? path.join(process.resourcesPath, 'hermes-runtime')
+  : path.join(APP_ROOT, 'build', 'hermes-runtime')
 
 // Build-time install stamp -- the git ref this .exe was built against.
 //
@@ -439,12 +443,14 @@ if (INSTALL_STAMP) {
   )
 }
 
-// HERMES_HOME — the user-facing root for everything Hermes-related. Mirrors
-// scripts/install.ps1's $HermesHome and scripts/install.sh's $HERMES_HOME.
+// HERMES_HOME — the user-facing root for everything Hermes-related. This bundled
+// desktop build keeps its Hermes state under Electron userData so it can run
+// next to a normal Hermes install without sharing profiles/config/logs.
 //
 // Defaults:
-//   Windows: %LOCALAPPDATA%\hermes (matches install.ps1)
-//   macOS / Linux: ~/.hermes (matches install.sh)
+//   Bundled Desktop: app userData/hermes-home
+//   Legacy override: set HERMES_DESKTOP_SHARED_HERMES_HOME=1 to use the old
+//                    install.ps1/install.sh defaults below.
 //
 // Special case for Windows: if the user has a legacy ~/.hermes directory
 // (e.g., from a prior pip install or a manual setup) AND no
@@ -461,6 +467,10 @@ function resolveHermesHome() {
 
   if (USER_DATA_OVERRIDE) {
     return path.join(path.resolve(USER_DATA_OVERRIDE), 'hermes-home')
+  }
+
+  if (process.env.HERMES_DESKTOP_SHARED_HERMES_HOME !== '1') {
+    return path.join(app.getPath('userData'), 'hermes-home')
   }
 
   if (IS_WINDOWS) {
@@ -586,7 +596,7 @@ const BOOT_FAKE_STEP_MS = (() => {
   return Math.max(120, raw)
 })()
 
-const APP_NAME = process.env.HERMES_DESKTOP_APP_NAME || 'Hermes'
+const APP_NAME = process.env.HERMES_DESKTOP_APP_NAME || 'Hermes Bundled'
 const TITLEBAR_HEIGHT = 34
 const MACOS_TRAFFIC_LIGHTS_HEIGHT = 14
 
@@ -879,12 +889,12 @@ app.setName(APP_NAME)
 // Windows toast notifications silently no-op unless an AppUserModelID is set:
 // `new Notification().show()` returns without error and nothing appears. The
 // AUMID must match the installed Start Menu shortcut's AUMID, which
-// electron-builder derives from the build `appId` (com.nousresearch.hermes) —
+// electron-builder derives from the build `appId` —
 // keep this string in sync with package.json `build.appId`. macOS/Linux don't
 // need this, so gate it on Windows. (Fixes: desktop approval/turn notifications
 // never firing on Windows.)
 if (IS_WINDOWS) {
-  app.setAppUserModelId('com.nousresearch.hermes')
+  app.setAppUserModelId('com.nousresearch.hermes-bundled')
 }
 
 // Seed the native About panel with the live Hermes version. This is refreshed
@@ -1006,7 +1016,7 @@ let backendStartFailure = null
 // can abort the in-flight install.sh/ps1 instead of leaving it running.
 let bootstrapAbortController = null
 let connectionConfigCache = null
-let connectionConfigCacheMtime = null
+let connectionConfigCacheKey = null
 const hermesLog = []
 const previewWatchers = new Map()
 let previewShortcutActive = false
@@ -3474,6 +3484,30 @@ function createActiveBackend(backendArgs) {
   }
 }
 
+function createBundledRuntimeBackend(backendArgs) {
+  const venvRoot = path.join(BUNDLED_RUNTIME_ROOT, 'venv')
+  const python = getVenvPython(venvRoot)
+
+  if (!fileExists(python)) {
+    return null
+  }
+
+  return {
+    kind: 'bundled-python',
+    label: `bundled Hermes runtime at ${BUNDLED_RUNTIME_ROOT}`,
+    command: python,
+    args: ['-m', 'hermes_cli.main', ...backendArgs],
+    env: buildDesktopBackendEnv({
+      hermesHome: HERMES_HOME,
+      pythonPathEntries: getVenvSitePackagesEntries(venvRoot),
+      venvRoot
+    }),
+    root: BUNDLED_RUNTIME_ROOT,
+    bootstrap: false,
+    shell: false
+  }
+}
+
 function resolveHermesBackend(backendArgs) {
   // 1. Explicit override -- HERMES_DESKTOP_HERMES_ROOT points at a developer
   //    checkout. Honour it as-is (no bootstrap; the user is driving).
@@ -3499,7 +3533,16 @@ function resolveHermesBackend(backendArgs) {
     }
   }
 
-  // 3. Bootstrap-complete ACTIVE_HERMES_ROOT -- the canonical install at
+  // 3. Bundled runtime -- self-contained installers can ship a platform-local
+  //    Python venv under resources/hermes-runtime/venv. Prefer it before the
+  //    mutable managed install/bootstrap ladder so first launch works offline.
+  const bundled = createBundledRuntimeBackend(backendArgs)
+
+  if (bundled) {
+    return bundled
+  }
+
+  // 4. Bootstrap-complete ACTIVE_HERMES_ROOT -- the canonical install at
   //    %LOCALAPPDATA%\hermes\hermes-agent (Windows) or ~/.hermes/hermes-agent.
   //    The bootstrap marker means install.ps1 stages finished and the user
   //    completed initial configuration; we trust the install and go straight
@@ -3509,7 +3552,7 @@ function resolveHermesBackend(backendArgs) {
     return createActiveBackend(backendArgs)
   }
 
-  // 4. Existing `hermes` on PATH -- installed via install.ps1 / install.sh from
+  // 5. Existing `hermes` on PATH -- installed via install.ps1 / install.sh from
   //    a previous tool-only setup, or pip-installed system-wide. Use it but
   //    do NOT write a bootstrap marker; the user did this themselves and we
   //    don't want to take ownership of an install we didn't perform.
@@ -3575,7 +3618,7 @@ function resolveHermesBackend(backendArgs) {
     }
   }
 
-  // 5. Last-ditch: pip-installed hermes_cli module via system Python.
+  // 6. Last-ditch: pip-installed hermes_cli module via system Python.
   //    Same rationale as #4 -- the user installed this; we use it but don't
   //    take ownership.
   const python = findSystemPython()
@@ -3604,7 +3647,7 @@ function resolveHermesBackend(backendArgs) {
     rememberLog(`Ignoring system Python ${python}: hermes_cli is not importable; falling through to bootstrap.`)
   }
 
-  // 6. Nothing usable yet -- signal the bootstrap runner that we need to
+  // 7. Nothing usable yet -- signal the bootstrap runner that we need to
   //    clone+install. Phase 1D's bootstrap-runner consumes this sentinel
   //    and drives install.ps1 stages with a progress UI. Until 1D lands,
   //    callers see the sentinel and surface it as a user-facing error
@@ -6148,49 +6191,103 @@ function sanitizeConnectionProfiles(raw: Record<string, any>) {
   return out
 }
 
+function normalizeDesktopConnectionConfig(raw: any) {
+  if (!raw || typeof raw !== 'object') {
+    return null
+  }
+
+  const remote = raw.remote && typeof raw.remote === 'object' ? raw.remote : {}
+
+  // authMode lives on the remote sub-object: 'oauth' (cookie + ws-ticket)
+  // or 'token' (legacy static session token). Default to 'token' for
+  // backward compatibility with configs written before OAuth support.
+  remote.authMode = remote.authMode === 'oauth' ? 'oauth' : 'token'
+
+  const rawToken = remote.token
+
+  if (typeof rawToken === 'string') {
+    const token = rawToken.trim()
+
+    if (token) {
+      try {
+        remote.token = encryptDesktopSecret(token)
+      } catch {
+        remote.token = { encoding: 'plain', value: token }
+      }
+    } else {
+      delete remote.token
+    }
+  } else if (!rawToken || typeof rawToken !== 'object') {
+    delete remote.token
+  }
+
+  return {
+    mode: raw.mode === 'ssh' ? 'ssh' : modeIsRemoteLike(raw.mode) ? raw.mode : 'local',
+    remote,
+    // Per-profile remote overrides: each profile may point at its own
+    // backend (local spawn or its own remote URL). Preserved verbatim so
+    // profileRemoteOverride() can resolve them; normalized lazily on save.
+    profiles: sanitizeConnectionProfiles(raw.profiles)
+  }
+}
+
 function readDesktopConnectionConfig() {
   // Check if file changed on disk since last read (e.g. modified by another
   // process or an external tool).  Our own writes update the cache inline
   // via writeDesktopConnectionConfig, but external changes would be missed.
-  let mtime = null
+  let sourcePath = 'local'
+  let sourceMtime = null
+  let config = { mode: 'local', remote: {}, profiles: {} }
 
   try {
-    mtime = fs.statSync(DESKTOP_CONNECTION_CONFIG_PATH).mtimeMs
+    const stat = fs.statSync(DESKTOP_CONNECTION_CONFIG_PATH)
+    sourcePath = DESKTOP_CONNECTION_CONFIG_PATH
+    sourceMtime = stat.mtimeMs
   } catch {
-    mtime = null
+    const packaged = readPackagedDesktopConnectionConfig({
+      appRoot: APP_ROOT,
+      resourcesPath: process.resourcesPath
+    })
+
+    if (packaged) {
+      sourcePath = packaged.path
+
+      try {
+        const normalized = normalizeDesktopConnectionConfig(packaged.config)
+
+        if (normalized) {
+          config = normalized
+          sourceMtime = fs.statSync(packaged.path).mtimeMs
+        }
+      } catch (error) {
+        console.warn(`[hermes] packaged default connection config at ${packaged.path} is invalid: ${error}`)
+      }
+    }
   }
 
-  if (connectionConfigCache && connectionConfigCacheMtime === mtime) {
+  const cacheKey = `${sourcePath}:${sourceMtime ?? 'none'}`
+
+  if (connectionConfigCache && connectionConfigCacheKey === cacheKey) {
     return connectionConfigCache
   }
-
-  let config = { mode: 'local', remote: {}, profiles: {} }
 
   try {
     const raw = fs.readFileSync(DESKTOP_CONNECTION_CONFIG_PATH, 'utf8')
     const parsed = JSON.parse(raw)
 
-    if (parsed && typeof parsed === 'object') {
-      const remote = parsed.remote && typeof parsed.remote === 'object' ? parsed.remote : {}
-      // authMode lives on the remote sub-object: 'oauth' (cookie + ws-ticket)
-      // or 'token' (legacy static session token). Default to 'token' for
-      // backward compatibility with configs written before OAuth support.
-      remote.authMode = remote.authMode === 'oauth' ? 'oauth' : 'token'
-      config = {
-        mode: parsed.mode === 'ssh' ? 'ssh' : modeIsRemoteLike(parsed.mode) ? parsed.mode : 'local',
-        remote,
-        // Per-profile remote overrides: each profile may point at its own
-        // backend (local spawn or its own remote URL). Preserved verbatim so
-        // profileRemoteOverride() can resolve them; normalized lazily on save.
-        profiles: sanitizeConnectionProfiles(parsed.profiles)
-      }
+    const normalized = normalizeDesktopConnectionConfig(parsed)
+
+    if (normalized) {
+      config = normalized
+      sourcePath = DESKTOP_CONNECTION_CONFIG_PATH
+      sourceMtime = fs.statSync(DESKTOP_CONNECTION_CONFIG_PATH).mtimeMs
     }
   } catch {
     // Missing or malformed connection settings should fall back to local.
   }
 
   connectionConfigCache = config
-  connectionConfigCacheMtime = mtime
+  connectionConfigCacheKey = `${sourcePath}:${sourceMtime ?? 'none'}`
 
   return config
 }
@@ -6199,7 +6296,7 @@ function writeDesktopConnectionConfig(config) {
   fs.mkdirSync(path.dirname(DESKTOP_CONNECTION_CONFIG_PATH), { recursive: true })
   writeFileAtomic(DESKTOP_CONNECTION_CONFIG_PATH, JSON.stringify(config, null, 2))
   connectionConfigCache = config
-  connectionConfigCacheMtime = fs.statSync(DESKTOP_CONNECTION_CONFIG_PATH).mtimeMs
+  connectionConfigCacheKey = `${DESKTOP_CONNECTION_CONFIG_PATH}:${fs.statSync(DESKTOP_CONNECTION_CONFIG_PATH).mtimeMs}`
 }
 
 // Returns the desktop's chosen profile name, or null when unset. "default" is
@@ -7894,7 +7991,7 @@ function spawnSecondaryWindow({ sessionId, watch }: { sessionId?: string; watch?
     height: SESSION_WINDOW_MIN_HEIGHT,
     minWidth: SESSION_WINDOW_MIN_WIDTH,
     minHeight: SESSION_WINDOW_MIN_HEIGHT,
-    title: 'Hermes',
+    title: APP_NAME,
     titleBarStyle: 'hidden',
     titleBarOverlay: getTitleBarOverlayOptions(),
     trafficLightPosition: IS_MAC ? WINDOW_BUTTON_POSITION : undefined,
@@ -7977,7 +8074,7 @@ function createInstanceWindow() {
     ...nextInstanceBounds(),
     minWidth: WINDOW_MIN_WIDTH,
     minHeight: WINDOW_MIN_HEIGHT,
-    title: 'Hermes',
+    title: APP_NAME,
     titleBarStyle: 'hidden',
     titleBarOverlay: getTitleBarOverlayOptions(),
     trafficLightPosition: IS_MAC ? WINDOW_BUTTON_POSITION : undefined,
@@ -8169,7 +8266,7 @@ function createWindow() {
     ...computeWindowOptions(savedWindowState, screen.getAllDisplays()),
     minWidth: WINDOW_MIN_WIDTH,
     minHeight: WINDOW_MIN_HEIGHT,
-    title: 'Hermes',
+    title: APP_NAME,
     // Frameless title bar on every platform so the renderer can paint the
     // "hide sidebar" button (and other left-side titlebar tools) flush with
     // the top edge — matching the macOS layout where the traffic lights sit
@@ -9134,7 +9231,7 @@ ipcMain.handle('hermes:notify', (_event, payload) => {
   const actions = Array.isArray(payload?.actions) ? payload.actions : []
 
   const notification = new Notification({
-    title: payload?.title || 'Hermes',
+    title: payload?.title || APP_NAME,
     body: payload?.body || '',
     silent: Boolean(payload?.silent),
     actions: actions.map(action => ({ type: 'button', text: String(action?.text || '') }))
@@ -10231,12 +10328,12 @@ ipcMain.handle('hermes:vscode-theme:fetch', async (_event, id) => fetchMarketpla
 ipcMain.handle('hermes:vscode-theme:search', async (_event, query) => searchMarketplaceThemes(String(query || ''), 20))
 
 // ---------------------------------------------------------------------------
-// hermes:// deep links (e.g. hermes://blueprint/morning-brief?time=08:00).
+// hermes-bundled:// deep links (e.g. hermes-bundled://blueprint/morning-brief?time=08:00).
 // A docs/dashboard "Send to App" button opens this URL; we route it into the
 // running app's chat composer. Three delivery paths: macOS 'open-url',
 // Win/Linux running-app 'second-instance' (argv), Win/Linux cold-start argv.
 // ---------------------------------------------------------------------------
-const HERMES_PROTOCOL = 'hermes'
+const HERMES_PROTOCOL = process.env.HERMES_DESKTOP_PROTOCOL || 'hermes-bundled'
 let _pendingDeepLink = null
 let _rendererReadyForDeepLink = false
 
@@ -10263,7 +10360,7 @@ function handleDeepLink(url) {
     return
   }
 
-  // hermes://blueprint/<key>?slot=val  -> host="blueprint", path="/<key>"
+  // hermes-bundled://blueprint/<key>?slot=val  -> host="blueprint", path="/<key>"
   const kind = parsed.hostname || ''
   const name = decodeURIComponent((parsed.pathname || '').replace(/^\//, ''))
   const params = {}
@@ -10323,7 +10420,7 @@ function registerDeepLinkProtocol() {
 }
 
 // Single-instance lock: deep links on a running app (Win/Linux) arrive as a
-// second-instance argv. Without the lock a second `hermes://` launch spawns a
+// second-instance argv. Without the lock a second protocol launch spawns a
 // whole new app instead of routing into the running one.
 const _gotSingleInstanceLock = app.requestSingleInstanceLock()
 
@@ -10381,7 +10478,7 @@ app.whenReady().then(() => {
   keepAwake.set(readPersistedKeepAwake())
   createWindow()
 
-  // Win/Linux cold start: the launching hermes:// URL is in our own argv.
+  // Win/Linux cold start: the launching protocol URL is in our own argv.
   const _coldStartLink = _extractDeepLink(process.argv)
 
   if (_coldStartLink) {

@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest'
 
-import { DEFAULT_LOCALE, isLocale, isSupportedLocaleValue, localeConfigValue, normalizeLocale } from './languages'
+import {
+  DEFAULT_LOCALE,
+  isLocale,
+  isSupportedLocaleValue,
+  localeConfigValue,
+  normalizeInitialLocale,
+  normalizeLocale
+} from './languages'
 
 describe('desktop i18n languages', () => {
   it('normalizes supported locale aliases', () => {
@@ -21,6 +28,13 @@ describe('desktop i18n languages', () => {
     expect(normalizeLocale(null)).toBe(DEFAULT_LOCALE)
     expect(normalizeLocale('')).toBe(DEFAULT_LOCALE)
     expect(normalizeLocale('de')).toBe(DEFAULT_LOCALE)
+  })
+
+  it('allows bundled builds to choose a different initial fallback locale', () => {
+    expect(normalizeInitialLocale(null, 'zh')).toBe('zh')
+    expect(normalizeInitialLocale('', 'zh')).toBe('zh')
+    expect(normalizeInitialLocale('de', 'zh')).toBe('zh')
+    expect(normalizeInitialLocale('en', 'zh')).toBe('en')
   })
 
   it('distinguishes exact locale ids from supported config aliases', () => {

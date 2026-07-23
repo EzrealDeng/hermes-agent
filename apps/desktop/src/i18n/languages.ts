@@ -79,6 +79,14 @@ export function normalizeLocale(value: unknown): Locale {
   return LOCALE_ALIASES[normalize(value)] ?? DEFAULT_LOCALE
 }
 
+export function normalizeInitialLocale(value: unknown, fallback: Locale = DEFAULT_LOCALE): Locale {
+  if (typeof value !== 'string') {
+    return fallback
+  }
+
+  return LOCALE_ALIASES[normalize(value)] ?? fallback
+}
+
 export function isSupportedLocaleValue(value: unknown): boolean {
   return typeof value === 'string' && LOCALE_ALIASES[normalize(value)] != null
 }
