@@ -14,7 +14,7 @@ function makeTree(root, entries) {
   }
 }
 
-test('copyWindowsPythonTree skips Python launcher executables', () => {
+test('copyWindowsPythonTree keeps base launchers and skips Python 3 aliases', () => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hermes-runtime-'))
   try {
     const src = path.join(tmp, 'src')
@@ -31,9 +31,9 @@ test('copyWindowsPythonTree skips Python launcher executables', () => {
 
     copyWindowsPythonTree(src, dest)
 
-    assert.equal(fs.existsSync(path.join(dest, 'python.exe')), false)
+    assert.equal(fs.readFileSync(path.join(dest, 'python.exe'), 'utf8'), 'launcher')
     assert.equal(fs.existsSync(path.join(dest, 'python3.exe')), false)
-    assert.equal(fs.existsSync(path.join(dest, 'pythonw.exe')), false)
+    assert.equal(fs.readFileSync(path.join(dest, 'pythonw.exe'), 'utf8'), 'launcher')
     assert.equal(fs.existsSync(path.join(dest, 'python3w.exe')), false)
     assert.equal(fs.readFileSync(path.join(dest, 'Lib', 'site.py'), 'utf8'), 'print("ok")')
     assert.equal(fs.readFileSync(path.join(dest, 'DLLs', 'python311.dll'), 'utf8'), 'dll')

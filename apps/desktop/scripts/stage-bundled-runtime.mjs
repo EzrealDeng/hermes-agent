@@ -59,7 +59,10 @@ export function copyTreeRecursive(src, dest, { excludeNames = new Set() } = {}) 
 }
 
 export function copyWindowsPythonTree(src, dest) {
-  const excluded = new Set(['python.exe', 'python3.exe', 'pythonw.exe', 'python3w.exe'])
+  // setup-python exposes python3*.exe aliases that 7-Zip can mistake for
+  // directories. Keep the real launchers: venv\Scripts\python.exe resolves
+  // its relocated base interpreter through ..\..\python\python.exe.
+  const excluded = new Set(['python3.exe', 'python3w.exe'])
   copyTreeRecursive(src, dest, { excludeNames: excluded })
 }
 
