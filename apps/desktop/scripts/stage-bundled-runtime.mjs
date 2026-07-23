@@ -38,6 +38,31 @@ function copyTree(src, dest) {
   fs.cpSync(src, dest, { recursive: true, force: true, dereference: true })
 }
 
+export function copyTreeRecursive(src, dest, { excludeNames = new Set() } = {}) {
+  const base = path.basename(src).toLowerCase()
+  if (excludeNames.has(base)) {
+    return
+  }
+
+  const stat = fs.statSync(src)
+
+  if (stat.isDirectory()) {
+    fs.mkdirSync(dest, { recursive: true })
+    for (const entry of fs.readdirSync(src, { withFileTypes: true })) {
+      copyTreeRecursive(path.join(src, entry.name), path.join(dest, entry.name), { excludeNames })
+    }
+    return
+  }
+
+  fs.mkdirSync(path.dirname(dest), { recursive: true })
+  fs.copyFileSync(src, dest)
+}
+
+export function copyWindowsPythonTree(src, dest) {
+  const excluded = new Set(['python.exe', 'python3.exe', 'pythonw.exe', 'python3w.exe'])
+  copyTreeRecursive(src, dest, { excludeNames: excluded })
+}
+
 function findCommand(command) {
   const paths = String(process.env.PATH || '').split(path.delimiter)
   const exts = process.platform === 'win32' ? (process.env.PATHEXT || '.EXE;.CMD;.BAT').split(';') : ['']
@@ -85,7 +110,11 @@ function bundleBasePythonRuntime() {
   }
 
   rmrf(bundledPythonRoot)
-  copyTree(baseRoot, bundledPythonRoot)
+  if (process.platform === 'win32') {
+    copyWindowsPythonTree(baseRoot, bundledPythonRoot)
+  } else {
+    copyTree(baseRoot, bundledPythonRoot)
+  }
 
   if (process.platform !== 'win32') {
     const venvBin = path.join(VENV_DIR, 'bin')
@@ -123,7 +152,7 @@ function buildRuntimeFromCheckout() {
   fs.mkdirSync(OUT_DIR, { recursive: true })
 
   if (uv) {
-    let result = spawnSync(uv, ['venv', VENV_DIR, '--python', python], {
+    let result = spawnSync(uv, ['venv', VENV_DIR, '--python', python, '--copies'], {
       cwd: REPO_ROOT,
       stdio: 'inherit',
       env: { ...process.env, UV_NO_CONFIG: '1' }
@@ -152,7 +181,7 @@ function buildRuntimeFromCheckout() {
     return
   }
 
-  const venvModule = spawnSync(python, ['-m', 'venv', VENV_DIR], {
+  const venvModule = spawnSync(python, ['-m', 'venv', '--copies', VENV_DIR], {
     cwd: REPO_ROOT,
     stdio: 'inherit'
   })
