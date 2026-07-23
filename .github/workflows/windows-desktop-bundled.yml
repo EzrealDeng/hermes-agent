@@ -1,0 +1,78 @@
+name: Windows Desktop Bundled Installer
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "Installer target to build"
+        required: true
+        default: "nsis"
+        type: choice
+        options:
+          - nsis
+          - msi
+          - both
+
+jobs:
+  build:
+    name: Build Windows ${{ inputs.target }} installer
+    runs-on: windows-latest
+    timeout-minutes: 90
+
+    env:
+      HERMES_DESKTOP_BUNDLE_PYTHON_RUNTIME: "1"
+      HERMES_DESKTOP_RUNTIME_PYTHON: "python"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Build NSIS installer
+        if: ${{ inputs.target == 'nsis' || inputs.target == 'both' }}
+        shell: pwsh
+        run: npm run dist:win:nsis --workspace apps/desktop
+
+      - name: Build MSI installer
+        if: ${{ inputs.target == 'msi' || inputs.target == 'both' }}
+        shell: pwsh
+        run: npm run dist:win:msi --workspace apps/desktop
+
+      - name: Verify bundled Python runtime
+        shell: pwsh
+        run: |
+          $python = "apps/desktop/build/hermes-runtime/venv/Scripts/python.exe"
+          if (!(Test-Path $python)) {
+            throw "Bundled Python runtime not found at $python"
+          }
+          & $python -m hermes_cli.main serve --help
+
+      - name: Upload installers
+        uses: actions/upload-artifact@v4
+        with:
+          name: hermes-bundled-windows-${{ inputs.target }}
+          path: |
+            apps/desktop/release/*.exe
+            apps/desktop/release/*.msi
+            apps/desktop/release/*.blockmap
+            apps/desktop/release/builder-*.yml
+            apps/desktop/release/builder-*.yaml
+          if-no-files-found: error
