@@ -34,6 +34,7 @@ import { stopBackendChild as stopBackendChildImpl } from './backend-child'
 import { dashboardFallbackArgs, sourceDeclaresServe } from './backend-command'
 import { createBackendConnectionState } from './backend-connection-state'
 import { buildDesktopBackendEnv, normalizeHermesHomeRoot } from './backend-env'
+import { getBundledRuntimePython } from './bundled-runtime'
 import { canImportHermesCli, verifyHermesCli } from './backend-probes'
 import { waitForDashboardPortAnnouncement } from './backend-ready'
 import { shouldLatchBackendStartFailure } from './backend-start-failure'
@@ -3486,7 +3487,7 @@ function createActiveBackend(backendArgs) {
 
 function createBundledRuntimeBackend(backendArgs) {
   const venvRoot = path.join(BUNDLED_RUNTIME_ROOT, 'venv')
-  const python = getVenvPython(venvRoot)
+  const python = getBundledRuntimePython(BUNDLED_RUNTIME_ROOT)
 
   if (!fileExists(python)) {
     return null

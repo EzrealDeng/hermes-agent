@@ -4,7 +4,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { test } from 'vitest'
 
-import { copyWindowsPythonTree, uvVenvArgs } from './stage-bundled-runtime.mjs'
+import { bundledPythonPath, copyWindowsPythonTree, uvInstallArgs, uvVenvArgs } from './stage-bundled-runtime.mjs'
 
 function makeTree(root, entries) {
   for (const [rel, content] of Object.entries(entries)) {
@@ -49,4 +49,21 @@ test('uvVenvArgs only passes options supported by uv venv', () => {
     '--python',
     'python.exe'
   ])
+})
+
+test('uvInstallArgs installs a self-contained non-editable Hermes package', () => {
+  assert.deepEqual(uvInstallArgs('runtime/venv/Scripts/python.exe'), [
+    'pip',
+    'install',
+    '--python',
+    'runtime/venv/Scripts/python.exe',
+    '.[all]'
+  ])
+})
+
+test('bundledPythonPath resolves the Windows base launcher outside the venv', () => {
+  assert.equal(
+    bundledPythonPath('C:\\runtime', 'win32'),
+    path.join('C:\\runtime', 'python', 'python.exe')
+  )
 })

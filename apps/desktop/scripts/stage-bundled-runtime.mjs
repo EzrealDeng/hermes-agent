@@ -85,8 +85,16 @@ function venvPythonPath(venvDir) {
   return path.join(venvDir, process.platform === 'win32' ? 'Scripts' : 'bin', process.platform === 'win32' ? 'python.exe' : 'python')
 }
 
+export function bundledPythonPath(outDir = OUT_DIR, platform = process.platform) {
+  return path.join(outDir, 'python', platform === 'win32' ? 'python.exe' : path.join('bin', 'python3.11'))
+}
+
 export function uvVenvArgs(venvDir, python) {
   return ['venv', venvDir, '--python', python]
+}
+
+export function uvInstallArgs(python) {
+  return ['pip', 'install', '--python', python, '.[all]']
 }
 
 function readPyvenvHome(venvDir) {
@@ -137,6 +145,10 @@ function bundleBasePythonRuntime() {
     const cfgText = fs.readFileSync(cfg, 'utf8')
     fs.writeFileSync(cfg, cfgText.replace(/^home\s*=.*$/m, 'home = ../../python'), 'utf8')
   }
+
+  if (!fs.existsSync(bundledPythonPath())) {
+    throw new Error(`Bundled base Python launcher not found at ${bundledPythonPath()}`)
+  }
 }
 
 function createPlaceholderRuntime() {
@@ -171,7 +183,7 @@ function buildRuntimeFromCheckout() {
 
     result = spawnSync(
       uv,
-      ['pip', 'install', '--python', venvPythonPath(VENV_DIR), '-e', '.[all]'],
+      uvInstallArgs(venvPythonPath(VENV_DIR)),
       {
         cwd: REPO_ROOT,
         stdio: 'inherit',
@@ -198,7 +210,7 @@ function buildRuntimeFromCheckout() {
   }
 
   const pip = venvPythonPath(VENV_DIR)
-  const install = spawnSync(pip, ['-m', 'pip', 'install', '-e', '.[all]'], {
+  const install = spawnSync(pip, ['-m', 'pip', 'install', '.[all]'], {
     cwd: REPO_ROOT,
     stdio: 'inherit'
   })
