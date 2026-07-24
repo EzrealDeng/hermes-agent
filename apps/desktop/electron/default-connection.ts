@@ -3,12 +3,15 @@ import path from 'node:path'
 
 const DEFAULT_CONNECTION_RESOURCE_NAME = 'default-connection.json'
 
-function readPackagedDesktopConnectionConfig(options: {
-  appRoot?: string
-  resourcesPath?: string | null
-  fsApi?: Pick<typeof fs, 'readFileSync'>
-} = {}) {
+function readPackagedDesktopConnectionConfig(
+  options: {
+    appRoot?: string
+    resourcesPath?: string | null
+    fsApi?: Pick<typeof fs, 'readFileSync'>
+  } = {}
+) {
   const fsApi = options.fsApi || fs
+
   const candidates = [
     options.resourcesPath ? path.join(options.resourcesPath, DEFAULT_CONNECTION_RESOURCE_NAME) : null,
     options.appRoot ? path.join(options.appRoot, 'build', DEFAULT_CONNECTION_RESOURCE_NAME) : null

@@ -3,7 +3,7 @@ import { createContext, type ReactNode, useCallback, useContext, useEffect, useM
 import { getHermesConfigRecord, type HermesConfigRecord, saveHermesConfig } from '@/hermes'
 
 import { TRANSLATIONS } from './catalog'
-import { DEFAULT_LOCALE, localeConfigValue, normalizeInitialLocale, normalizeLocale } from './languages'
+import { DEFAULT_LOCALE, localeConfigValue, normalizeInitialLocale } from './languages'
 import { setRuntimeI18nLocale } from './runtime'
 import type { Locale, Translations } from './types'
 

@@ -34,12 +34,12 @@ import { stopBackendChild as stopBackendChildImpl } from './backend-child'
 import { dashboardFallbackArgs, sourceDeclaresServe } from './backend-command'
 import { createBackendConnectionState } from './backend-connection-state'
 import { buildDesktopBackendEnv, normalizeHermesHomeRoot } from './backend-env'
-import { getBundledRuntimePython } from './bundled-runtime'
 import { canImportHermesCli, shouldTrustHermesOverride, verifyHermesCli } from './backend-probes'
 import { waitForDashboardPortAnnouncement } from './backend-ready'
 import { shouldLatchBackendStartFailure } from './backend-start-failure'
 import { detectRemoteDisplay, isWindowsBinaryPathInWsl, isWslEnvironment } from './bootstrap-platform'
 import { runBootstrap } from './bootstrap-runner'
+import { getBundledRuntimePython } from './bundled-runtime'
 import { applyConnectionChange, resolveTerminalConnection } from './connection-apply'
 import {
   authModeFromStatus,
@@ -67,6 +67,7 @@ import {
   tokenPreview
 } from './connection-config'
 import { adoptServedDashboardToken } from './dashboard-token'
+import { readPackagedDesktopConnectionConfig } from './default-connection'
 import { loadOrCreateInstallationId, sshOwnershipId } from './desktop-installation'
 import {
   buildPosixCleanupScript,
@@ -142,7 +143,6 @@ import {
 import { ensureSpawnHelperExecutable } from './spawn-helper-perms'
 import { createBootstrapCoordinator, sshConfigFingerprint } from './ssh-bootstrap-coordinator'
 import { collectSshConfigHosts, parseSshGOutput } from './ssh-config'
-import { readPackagedDesktopConnectionConfig } from './default-connection'
 import {
   buildInteractiveSshArgs,
   createSshProbeConnection,
@@ -377,6 +377,7 @@ app.commandLine.appendSwitch('disable-backgrounding-occluded-windows')
 app.commandLine.appendSwitch('disable-background-timer-throttling')
 
 const SOURCE_REPO_ROOT = path.resolve(APP_ROOT, '../..')
+
 const BUNDLED_RUNTIME_ROOT = process.resourcesPath
   ? path.join(process.resourcesPath, 'hermes-runtime')
   : path.join(APP_ROOT, 'build', 'hermes-runtime')
