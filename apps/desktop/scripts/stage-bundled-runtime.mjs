@@ -38,6 +38,34 @@ function copyTree(src, dest) {
   fs.cpSync(src, dest, { recursive: true, force: true, dereference: true })
 }
 
+export function copyTreeRecursive(src, dest, { excludeNames = new Set() } = {}) {
+  const base = path.basename(src).toLowerCase()
+  if (excludeNames.has(base)) {
+    return
+  }
+
+  const stat = fs.statSync(src)
+
+  if (stat.isDirectory()) {
+    fs.mkdirSync(dest, { recursive: true })
+    for (const entry of fs.readdirSync(src, { withFileTypes: true })) {
+      copyTreeRecursive(path.join(src, entry.name), path.join(dest, entry.name), { excludeNames })
+    }
+    return
+  }
+
+  fs.mkdirSync(path.dirname(dest), { recursive: true })
+  fs.copyFileSync(src, dest)
+}
+
+export function copyWindowsPythonTree(src, dest) {
+  // setup-python exposes python3*.exe aliases that 7-Zip can mistake for
+  // directories. Keep the real launchers: venv\Scripts\python.exe resolves
+  // its relocated base interpreter through ..\..\python\python.exe.
+  const excluded = new Set(['python3.exe', 'python3w.exe'])
+  copyTreeRecursive(src, dest, { excludeNames: excluded })
+}
+
 function findCommand(command) {
   const paths = String(process.env.PATH || '').split(path.delimiter)
   const exts = process.platform === 'win32' ? (process.env.PATHEXT || '.EXE;.CMD;.BAT').split(';') : ['']
@@ -55,6 +83,18 @@ function findCommand(command) {
 
 function venvPythonPath(venvDir) {
   return path.join(venvDir, process.platform === 'win32' ? 'Scripts' : 'bin', process.platform === 'win32' ? 'python.exe' : 'python')
+}
+
+export function bundledPythonPath(outDir = OUT_DIR, platform = process.platform) {
+  return path.join(outDir, 'python', platform === 'win32' ? 'python.exe' : path.join('bin', 'python3.11'))
+}
+
+export function uvVenvArgs(venvDir, python) {
+  return ['venv', venvDir, '--python', python]
+}
+
+export function uvInstallArgs(python) {
+  return ['pip', 'install', '--python', python, '.[all]']
 }
 
 function readPyvenvHome(venvDir) {
@@ -85,7 +125,11 @@ function bundleBasePythonRuntime() {
   }
 
   rmrf(bundledPythonRoot)
-  copyTree(baseRoot, bundledPythonRoot)
+  if (process.platform === 'win32') {
+    copyWindowsPythonTree(baseRoot, bundledPythonRoot)
+  } else {
+    copyTree(baseRoot, bundledPythonRoot)
+  }
 
   if (process.platform !== 'win32') {
     const venvBin = path.join(VENV_DIR, 'bin')
@@ -100,6 +144,10 @@ function bundleBasePythonRuntime() {
   } else {
     const cfgText = fs.readFileSync(cfg, 'utf8')
     fs.writeFileSync(cfg, cfgText.replace(/^home\s*=.*$/m, 'home = ../../python'), 'utf8')
+  }
+
+  if (!fs.existsSync(bundledPythonPath())) {
+    throw new Error(`Bundled base Python launcher not found at ${bundledPythonPath()}`)
   }
 }
 
@@ -123,7 +171,7 @@ function buildRuntimeFromCheckout() {
   fs.mkdirSync(OUT_DIR, { recursive: true })
 
   if (uv) {
-    let result = spawnSync(uv, ['venv', VENV_DIR, '--python', python], {
+    let result = spawnSync(uv, uvVenvArgs(VENV_DIR, python), {
       cwd: REPO_ROOT,
       stdio: 'inherit',
       env: { ...process.env, UV_NO_CONFIG: '1' }
@@ -135,7 +183,7 @@ function buildRuntimeFromCheckout() {
 
     result = spawnSync(
       uv,
-      ['pip', 'install', '--python', venvPythonPath(VENV_DIR), '.[all]'],
+      uvInstallArgs(venvPythonPath(VENV_DIR)),
       {
         cwd: REPO_ROOT,
         stdio: 'inherit',
@@ -152,7 +200,7 @@ function buildRuntimeFromCheckout() {
     return
   }
 
-  const venvModule = spawnSync(python, ['-m', 'venv', VENV_DIR], {
+  const venvModule = spawnSync(python, ['-m', 'venv', '--copies', VENV_DIR], {
     cwd: REPO_ROOT,
     stdio: 'inherit'
   })

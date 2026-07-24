@@ -1,0 +1,53 @@
+#!/bin/sh
+
+set -eu
+
+bin_dir="/usr/local/bin"
+bundled_command="$bin_dir/hermes-bundled"
+hermes_command="$bin_dir/hermes"
+
+mkdir -p "$bin_dir"
+
+cat > "$bundled_command" <<'EOF'
+#!/bin/sh
+# Managed by the Hermes Bundled macOS installer.
+set -eu
+
+runtime="/Applications/Hermes Bundled.app/Contents/Resources/hermes-runtime"
+python="$runtime/venv/bin/python"
+site_packages="$runtime/venv/lib/python3.11/site-packages"
+
+if [ ! -x "$python" ]; then
+  echo "Hermes Bundled runtime was not found at $python" >&2
+  exit 1
+fi
+
+export HERMES_HOME="${HERMES_HOME:-$HOME/Library/Application Support/Hermes Bundled/hermes-home}"
+export PYTHONPATH="$site_packages"
+
+exec "$python" -m hermes_cli.main "$@"
+EOF
+
+chown root:wheel "$bundled_command"
+chmod 0755 "$bundled_command"
+
+if [ -L "$hermes_command" ] && [ "$(readlink "$hermes_command")" = "$bundled_command" ]; then
+  :
+elif [ -f "$hermes_command" ] && grep -q "Managed by the Hermes Bundled macOS installer" "$hermes_command"; then
+  rm -f "$hermes_command"
+  ln -s "$bundled_command" "$hermes_command"
+else
+  if [ -e "$hermes_command" ] || [ -L "$hermes_command" ]; then
+    backup_command="$bin_dir/hermes.pre-hermes-bundled"
+    if [ ! -e "$backup_command" ] && [ ! -L "$backup_command" ]; then
+      mv "$hermes_command" "$backup_command"
+      echo "Existing Hermes command was preserved at $backup_command." >&2
+    else
+      echo "Existing Hermes command was replaced; an earlier backup remains at $backup_command." >&2
+      rm -f "$hermes_command"
+    fi
+  fi
+  ln -s "$bundled_command" "$hermes_command"
+fi
+
+exit 0

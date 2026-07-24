@@ -59,10 +59,16 @@ jobs:
       - name: Verify bundled Python runtime
         shell: pwsh
         run: |
-          $python = "apps/desktop/build/hermes-runtime/venv/Scripts/python.exe"
+          $runtime = "apps/desktop/build/hermes-runtime"
+          $python = "$runtime/python/python.exe"
+          $sitePackages = "$runtime/venv/Lib/site-packages"
           if (!(Test-Path $python)) {
             throw "Bundled Python runtime not found at $python"
           }
+          if (!(Test-Path $sitePackages)) {
+            throw "Bundled Python packages not found at $sitePackages"
+          }
+          $env:PYTHONPATH = $sitePackages
           & $python -m hermes_cli.main serve --help
 
       - name: Upload installers

@@ -32,6 +32,7 @@
     "dist": "npm run build && npm run builder",
     "dist:mac": "npm run build && npm run builder -- --mac",
     "dist:mac:dmg": "npm run build && npm run builder -- --mac dmg",
+    "dist:mac:pkg": "npm run build && npm run builder -- --mac pkg",
     "dist:mac:zip": "npm run build && npm run builder -- --mac zip",
     "dist:win": "npm run build && npm run builder -- --win",
     "dist:win:msi": "npm run build && npm run builder -- --win msi",
@@ -255,6 +256,14 @@
         }
       ]
     },
+    "pkg": {
+      "scripts": "../scripts/pkg",
+      "installLocation": "/Applications",
+      "allowAnywhere": false,
+      "allowCurrentUserHome": false,
+      "allowRootDirectory": true,
+      "isRelocatable": false
+    },
     "win": {
       "legalTrademarks": "Hermes",
       "target": [
@@ -277,6 +286,7 @@
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "perMachine": false,
+      "include": "scripts/installer.nsh",
       "shortcutName": "Hermes Bundled",
       "uninstallDisplayName": "Hermes Bundled",
       "warningsAsErrors": false
