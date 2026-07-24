@@ -1,0 +1,69 @@
+name: macOS Desktop Bundled PKG
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build macOS PKG
+    runs-on: macos-14
+    timeout-minutes: 120
+
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: "false"
+      HERMES_DESKTOP_BUNDLE_PYTHON_RUNTIME: "1"
+      HERMES_DESKTOP_RUNTIME_PYTHON: "python3.11"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Build bundled PKG
+        run: npm run dist:mac:pkg --workspace apps/desktop
+
+      - name: Verify bundled Python runtime
+        run: |
+          runtime="apps/desktop/build/hermes-runtime"
+          python="$runtime/venv/bin/python"
+          test -x "$python"
+          "$python" -m hermes_cli.main serve --help
+
+      - name: Verify PKG payload and command installer
+        run: |
+          pkg="$(find apps/desktop/release -maxdepth 1 -name '*.pkg' -print -quit)"
+          test -n "$pkg"
+
+          expanded="$RUNNER_TEMP/hermes-pkg"
+          pkgutil --expand-full "$pkg" "$expanded"
+          find "$expanded" -type d -name 'Hermes Bundled.app' -print -quit | grep -q .
+          find "$expanded" -path '*/Scripts/postinstall' -type f -exec grep -F 'bin_dir="/usr/local/bin"' {} \; | grep -q .
+          find "$expanded" -path '*/Scripts/postinstall' -type f -exec grep -F 'bundled_command="$bin_dir/hermes-bundled"' {} \; | grep -q .
+
+      - name: Upload PKG
+        uses: actions/upload-artifact@v4
+        with:
+          name: hermes-bundled-macos-pkg-${{ runner.arch }}
+          path: apps/desktop/release/*.pkg
+          if-no-files-found: error
