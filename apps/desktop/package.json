@@ -273,6 +273,7 @@
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "perMachine": false,
+      "include": "scripts/installer.nsh",
       "shortcutName": "Hermes Bundled",
       "uninstallDisplayName": "Hermes Bundled",
       "warningsAsErrors": false
